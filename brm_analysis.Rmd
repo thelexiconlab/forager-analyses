@@ -14,8 +14,8 @@ library(lme4)
 # psyrev data
 
 ```{r}
-psyrev_switch = read_csv("psyrev_data/psyrev_data_model_all_switch_all_switchresults.csv")
-psyrev_similarity = read_csv("psyrev_data/psyrev_data_model_all_switch_all_individualitemfits.csv") %>%
+psyrev_switch = read_csv("data/psyrev_data/psyrev_data_model_all_switch_all_switchresults.csv")
+psyrev_similarity = read_csv("data/psyrev_data/psyrev_data_model_all_switch_all_individualitemfits.csv") %>%
   select(Subject, Fluency_Item, Semantic_Similarity, Phonological_Similarity) %>%
   rename(semantic = Semantic_Similarity,
          phonological = Phonological_Similarity)
@@ -67,7 +67,7 @@ psyrev_switch_sample %>%
 ## compare model fits
 
 ```{r}
-psyrev_models = read_csv("psyrev_data/data-psyrev_model_all_switch_all_modelresults.csv")
+psyrev_models = read_csv("data/psyrev_data/data-psyrev_model_all_switch_all_modelresults.csv")
 psyrev_sum_nLL = psyrev_models %>% group_by(Model) %>%
   filter(Model %in% c("forage_static", "forage_dynamic_simdrop", "forage_dynamic_troyer",
                       "forage_random_baseline")) %>%
@@ -81,19 +81,19 @@ psyrev_sum_nLL
 
 # sz data
 ```{r}
-sz_modeldata = read_csv("sz_data/sz_data_model_dynamic_switch_all_modelresults.csv") %>% 
+sz_modeldata = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_modelresults.csv") %>% 
   rename(subject = Subject) %>%
-  left_join( readxl::read_excel("sz_data/diagnostic_group_codes.xlsx"))%>%
+  left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
 
-sz_metrics = read_csv("sz_data/sz_data_model_dynamic_switch_all_individualitemfits.csv") %>% 
+sz_metrics = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_individualitemfits.csv") %>% 
   rename(subject = Subject) %>%
-  left_join( readxl::read_excel("sz_data/diagnostic_group_codes.xlsx"))%>%
+  left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
 
-sz_switch = read_csv("sz_data/sz_data_model_dynamic_switch_all_switchresults.csv") %>% 
+sz_switch = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_switchresults.csv") %>% 
   rename(subject = Subject) %>%
-  left_join( readxl::read_excel("sz_data/diagnostic_group_codes.xlsx"))%>%
+  left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
 ```
 
