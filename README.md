@@ -16,7 +16,7 @@ We analyze forager outputs from two datasets (`psyrev_data.txt` and `sz_data.txt
 
 ## scripts
 
-The .Rmd file contains the code for analyzing the data from the forager package. The .html file contains the output of the .Rmd file.
+The `.Rmd` file contains the code for analyzing the data from the forager package. The `.html` file contains the output of the .Rmd file.
 
 ### psyrev data
 
