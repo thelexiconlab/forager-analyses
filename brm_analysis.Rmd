@@ -9,6 +9,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggthemes)
 library(lme4)
+setwd(here::here())
+getwd()
 ```
 
 # psyrev data
@@ -31,7 +33,8 @@ Fluency_Item %in% c("aardvark", "elephant", "flea", "ferret", "parrot", "hippopo
          pair = paste(prev, Fluency_Item, sep = "-")) %>%
   left_join(psyrev_similarity) %>%
   pivot_longer(names_to = "type", cols = c(semantic, phonological)) %>%
-  group_by(Switch_Method) %>%
+  group_by(Switch_Method, type) %>%
+  filter(Fluency_Item != "aardvark") %>%
   mutate(row = row_number(),
          Switch_Method = fct_recode(Switch_Method, multimodal = "multimodal_alpha=0.4",
                                      delta = "delta_rise=0.0_fall=1.0",
@@ -39,29 +42,25 @@ Fluency_Item %in% c("aardvark", "elephant", "flea", "ferret", "parrot", "hippopo
                                      troyer= "troyer"))%>%
   mutate(Switch_Method = fct_relevel(Switch_Method, "troyer","simdrop", "delta", "multimodal"),
          Switch_Value = ifelse(Switch_Value == 1, "switch", "cluster"))%>%
-  filter(Fluency_Item != "aardvark") %>%
   rename(method = Switch_Method,
          transition = Switch_Value)
 
-psyrev_switch_sample %>%
+clusterplot =psyrev_switch_sample %>%
   filter(method == "troyer")%>%
-  ggplot(aes(x = row, y = value, group= type, color = type, label = pair)) +
+  ggplot(aes(x = row, y = value, group= type, color = type)) +
   geom_line()+
-  ggrepel::geom_text_repel(color = "black")+
-  #geom_point(size = 4)+
-  #geom_label()+
   facet_wrap(~method)+
   scale_color_stata()+
   geom_point(size = 4)+
   ggthemes::theme_few()+
   labs(x = "retrieval order", y = "similarity value")+
   theme(axis.title = element_text(face = "bold", size = rel(1)),
-        strip.text= element_text(face = "bold", size = rel(1)),
+        strip.text= element_blank(),
           legend.title = element_text(face = "bold", size = rel(1)),
          plot.title = element_text(hjust = .5),
          axis.text.x = element_text(face = "bold", size = rel(1.2)))
   
-  
+ggsave('plots/switch.pdf', clusterplot)  
 ```
 
 ## compare model fits
