@@ -16,8 +16,9 @@ getwd()
 # psyrev data
 
 ```{r}
-psyrev_switch = read_csv("data/psyrev_data/psyrev_data_model_all_switch_all_switchresults.csv")
-psyrev_similarity = read_csv("data/psyrev_data/psyrev_data_model_all_switch_all_individualitemfits.csv") %>%
+psyrev_switch = read_csv("data/psyrev_data/switch_results.csv")
+
+psyrev_lexical = read_csv("data/psyrev_data/lexical_results.csv") %>%
   select(Subject, Fluency_Item, Semantic_Similarity, Phonological_Similarity) %>%
   rename(semantic = Semantic_Similarity,
          phonological = Phonological_Similarity)
@@ -26,12 +27,13 @@ psyrev_similarity = read_csv("data/psyrev_data/psyrev_data_model_all_switch_all_
 ## visualize cluster/switch designations
 ```{r}
 psyrev_switch_sample = psyrev_switch %>% filter(Subject == 51 &
-              Switch_Method %in% c("simdrop", "troyer", "delta_rise=0.0_fall=1.0",
-                                   "multimodal_alpha=0.4") &
+              Switch_Method %in% c("simdrop", "norms_associative", "norms_categorical",
+                                   "delta_rise=0.0_fall=1.0",
+                                   "multimodal_alpha=0.2") &
 Fluency_Item %in% c("aardvark", "elephant", "flea", "ferret", "parrot", "hippopotamus")) %>%
   mutate(prev = lag(Fluency_Item),
          pair = paste(prev, Fluency_Item, sep = "-")) %>%
-  left_join(psyrev_similarity) %>%
+  left_join(psyrev_lexical) %>%
   pivot_longer(names_to = "type", cols = c(semantic, phonological)) %>%
   group_by(Switch_Method, type) %>%
   filter(Fluency_Item != "aardvark") %>%
@@ -39,14 +41,15 @@ Fluency_Item %in% c("aardvark", "elephant", "flea", "ferret", "parrot", "hippopo
          Switch_Method = fct_recode(Switch_Method, multimodal = "multimodal_alpha=0.4",
                                      delta = "delta_rise=0.0_fall=1.0",
                                      simdrop = "simdrop",
-                                     troyer= "troyer"))%>%
-  mutate(Switch_Method = fct_relevel(Switch_Method, "troyer","simdrop", "delta", "multimodal"),
+                                     associative= "norms_associative",
+                                    categorical = "norms_categorical"))%>%
+  mutate(Switch_Method = fct_relevel(Switch_Method, "associative","categorical",  "simdrop", "delta", "multimodal"),
          Switch_Value = ifelse(Switch_Value == 1, "switch", "cluster"))%>%
   rename(method = Switch_Method,
          transition = Switch_Value)
 
 clusterplot =psyrev_switch_sample %>%
-  filter(method == "troyer")%>%
+  filter(method == "associative")%>%
   ggplot(aes(x = row, y = value, group= type, color = type)) +
   geom_line()+
   facet_wrap(~method)+
@@ -66,9 +69,10 @@ ggsave('plots/switch.pdf', clusterplot)
 ## compare model fits
 
 ```{r}
-psyrev_models = read_csv("data/psyrev_data/data-psyrev_model_all_switch_all_modelresults.csv")
+psyrev_models = read_csv("data/psyrev_data/model_results.csv")
 psyrev_sum_nLL = psyrev_models %>% group_by(Model) %>%
-  filter(Model %in% c("forage_static", "forage_dynamic_simdrop", "forage_dynamic_troyer",
+  filter(Model %in% c("forage_static", "forage_dynamic_simdrop", "forage_dynamic_norms_associative",
+                      "forage_dynamic_norms_categorical",
                       "forage_random_baseline")) %>%
   summarise(sum_nLL = sum(Negative_Log_Likelihood_Optimized)) %>%
   arrange(sum_nLL)
@@ -80,17 +84,12 @@ psyrev_sum_nLL
 
 # sz data
 ```{r}
-sz_modeldata = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_modelresults.csv") %>% 
+sz_individual_metrics = read_csv("data/sz_data/sz_unk/individual_descriptive_stats.csv") %>% 
   rename(subject = Subject) %>%
   left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
 
-sz_metrics = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_individualitemfits.csv") %>% 
-  rename(subject = Subject) %>%
-  left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
-  filter(!is.na(diagnostic_group))
-
-sz_switch = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_switchresults.csv") %>% 
+sz_modeldata = read_csv("data/sz_data/sz_unk/model_results.csv") %>% 
   rename(subject = Subject) %>%
   left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
@@ -98,28 +97,26 @@ sz_switch = read_csv("data/sz_data/sz_data_model_dynamic_switch_all_switchresult
 
 ## basic descriptives
 
-
-```{r}
-subjects = sz_metrics %>% select(subject, diagnostic_group) %>% distinct() %>% 
-  group_by(diagnostic_group) %>% count()
-
-```
 ### number of items
 
 ```{r}
 
-num_items = sz_metrics %>% select(subject, Fluency_Item, diagnostic_group) %>%
-  group_by(diagnostic_group, subject) %>% count()
+num_items = sz_individual_metrics %>% filter(!is.na(`#_of_Items`))%>%
+  select(diagnostic_group, subject, `#_of_Items`)
+
   
-num_items %>%group_by(diagnostic_group)%>%
-  summarise(ci = list(mean_cl_boot(n) %>% 
-                        rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
+agg_items = sz_individual_metrics %>% filter(!is.na(`#_of_Items`))%>%
+  group_by(diagnostic_group)%>%
+  summarise(ci = list(mean_cl_boot(`#_of_Items`) %>% 
+                        rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest
+  
+agg_items %>%
   ggplot(aes(x = diagnostic_group, y = mean, group = diagnostic_group, 
              fill = diagnostic_group)) +
          geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
             geom_errorbar(aes(ymin=lwr, ymax=upr), size = 0.5, width=.1, 
                 color = "black", position = position_dodge(0.70))+
-  geom_point(data = num_items, aes(x = diagnostic_group, y = n, 
+  geom_point(data = num_items, aes(x = diagnostic_group, y = `#_of_Items`, 
                                     group = diagnostic_group, fill =diagnostic_group),
              shape = 21, position = position_jitterdodge(jitter.width = 0.1),
              alpha = 0.6)+
@@ -138,69 +135,69 @@ num_items %>%group_by(diagnostic_group)%>%
 num_items$diagnostic_group = as.factor(num_items$diagnostic_group)
 contrasts(num_items$diagnostic_group) = contr.treatment(3, base = 3)
 
-items_model = lm(data = num_items, n ~ diagnostic_group)
+items_model = lm(data = num_items, `#_of_Items` ~ diagnostic_group)
 
 summary(items_model)
+contrasts(num_items$diagnostic_group)
 ```
 
 
-### use of frequency
+### use of lexical information
 ```{r}  
-metrics_long = sz_metrics %>% select(subject, diagnostic_group, Fluency_Item,
-                   Semantic_Similarity, Phonological_Similarity,Frequency_Value) %>%
-  rename(semantic = Semantic_Similarity, 
-         frequency = Frequency_Value,
-         phonological = Phonological_Similarity)%>%
+
+lexical_individual = sz_individual_metrics %>% filter(!is.na(`Semantic_Similarity_mean`))%>%
+  select(diagnostic_group, subject, 
+         Semantic_Similarity_mean, Phonological_Similarity_mean, Frequency_Value_mean) %>%
+  rename(semantic = Semantic_Similarity_mean, 
+         frequency = Frequency_Value_mean,
+         phonological = Phonological_Similarity_mean)%>%
   pivot_longer(names_to = "type", 
                cols=c(semantic, phonological,frequency)) %>%
   mutate(type = as.factor(type),
          diagnostic_group =as.factor(diagnostic_group))
 
-metrics_long %>%
-    group_by(diagnostic_group, type) %>%
-  summarise(ci = list(mean_cl_boot(value) %>% 
-                        rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
-    filter(type == "frequency") %>%
-  ggplot(aes(x = type, y = mean, group = diagnostic_group, 
-             fill = diagnostic_group)) +
-         geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
-            geom_errorbar(aes(ymin=lwr, ymax=upr), size = 0.5, width=.1, 
-                color = "black", position = position_dodge(0.70))+
-  theme_few()+
-  scale_fill_calc()+
-  scale_color_calc()+
-  labs(y = "mean log frequency", x = "", title = "forager: Frequency of Items Produced")+
-  theme(aspect.ratio = 1)+
-   theme(axis.title = element_text(face = "bold", size = rel(1)),
-          legend.title = element_text(face = "bold", size = rel(1)),
-         plot.title = element_text(hjust = .5),
-         axis.text.x = element_text(face = "bold", size = rel(1.2)))
-  
+agg_lexical = lexical_individual %>%
+  group_by(diagnostic_group, type) %>%
+  summarize(mean = mean(value),
+            sd = sd(value))
 
-metrics_long$diagnostic_group = as.factor(metrics_long$diagnostic_group)
-contrasts(metrics_long$diagnostic_group) = contr.treatment(3, base = 3)
-model = lm(data = metrics_long %>% filter(type == "frequency"), 
+contrasts(lexical_individual$diagnostic_group) = contr.treatment(3, base = 3)
+
+freq_model = lm(data = lexical_individual %>% filter(type == "frequency"), 
            value ~ diagnostic_group)
-summary(model)
-car::Anova(model)
+summary(freq_model)
+
+sem_model = lm(data = lexical_individual %>% filter(type == "semantic"), 
+           value ~ diagnostic_group)
+summary(sem_model)
+
+phon_model = lm(data = lexical_individual %>% filter(type == "phonological"), 
+           value ~ diagnostic_group)
+summary(phon_model)
 ```
 
 ## number of switches
 
 ```{r}
-## count number of switches
-switch_count = sz_switch %>%
-  filter(Switch_Value == 1) %>%
-  group_by(subject, Switch_Method, diagnostic_group) %>%
-  count()
 
-switch_count %>%
+sz_switch_metrics = sz_individual_metrics %>% 
+  filter(Switch_Method %in% c("simdrop", "norms_associative", "norms_categorical")) %>%
+  select(subject, Switch_Method, Number_of_Switches, Cluster_Size_mean, Cluster_Size_std, diagnostic_group)
+
+
+agg_switches = sz_switch_metrics %>%
+  filter(Switch_Method == "simdrop") %>%
+  group_by(diagnostic_group) %>%
+  summarise(mean = mean(Number_of_Switches),
+            sd = sd (Number_of_Switches))
+
+
+sz_switchplot = sz_switch_metrics %>%
     group_by(diagnostic_group, Switch_Method) %>%
-  summarise(ci = list(mean_cl_boot(n) %>% 
+  summarise(ci = list(mean_cl_boot(Number_of_Switches) %>% 
                         rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
-  filter(Switch_Method %in% c("simdrop", "troyer")) %>%
-    mutate(Switch_Method = fct_recode(Switch_Method, `similarity\ndrop` = "simdrop",
-                                    `Troyer\nnorms` = "troyer")) %>%
+  mutate(Switch_Method = ifelse(Switch_Method == "norms_associative", "norms\nassociative",
+                                ifelse(Switch_Method == "norms_categorical", "norms\ncategorical", "similarity\ndrop")))%>%
   ggplot(aes(x = Switch_Method, y = mean, group = diagnostic_group, 
              fill = diagnostic_group)) +
          geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
@@ -216,15 +213,15 @@ switch_count %>%
          plot.title = element_text(hjust = .5),
          axis.text.x = element_text(face = "bold", size = rel(1.2)))
 
+ggsave('plots/sz_switches.pdf', sz_switchplot)  
+
 ## model
-switch_model_data = switch_count %>% filter(Switch_Method %in% c("simdrop", "troyer"))
 
-switch_model_data$diagnostic_group = as.factor(switch_model_data$diagnostic_group)
-contrasts(switch_model_data$diagnostic_group) = contr.treatment(3, base = 3)
+sz_switch_metrics$diagnostic_group = as.factor(sz_switch_metrics$diagnostic_group)
+contrasts(sz_switch_metrics$diagnostic_group) = contr.treatment(3, base = 3)
 
-
-switch_model_simdrop = lm(data = switch_model_data %>% filter(Switch_Method == "simdrop") , 
-                  n ~ diagnostic_group)
+switch_model_simdrop = lm(data = sz_switch_metrics %>% filter(Switch_Method == "simdrop") , 
+                  Number_of_Switches ~ diagnostic_group)
 summary(switch_model_simdrop)
 ```
 
@@ -233,24 +230,12 @@ summary(switch_model_simdrop)
 ## mean cluster size
 
 ```{r}
-size_data = sz_switch %>% 
-  filter(Switch_Method %in% c("simdrop", "troyer")) %>%
-  group_by(subject, diagnostic_group, Switch_Method) %>%
-    summarise(rl = list(rle(Switch_Value)), 
-              switch_type = rl[[1]]$values, 
-              num_items = rl[[1]]$lengths) %>% select(-rl)%>%
-  arrange(subject)
-
-cluster_size = size_data %>%
-  filter(switch_type == 0) %>%
-  mutate(num_items= num_items+1)
-
-cluster_size %>%
+sz_clustersizeplot = sz_switch_metrics %>%
     group_by(diagnostic_group, Switch_Method) %>%
-  summarise(ci = list(mean_cl_boot(num_items) %>% 
+  summarise(ci = list(mean_cl_boot(Cluster_Size_mean) %>% 
                         rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
-  mutate(Switch_Method = fct_recode(Switch_Method, `similarity\ndrop` = "simdrop",
-                                    `Troyer\nnorms` = "troyer")) %>%
+  mutate(Switch_Method = ifelse(Switch_Method == "norms_associative", "norms\nassociative",
+                                ifelse(Switch_Method == "norms_categorical", "norms\ncategorical", "similarity\ndrop")))%>%
   ggplot(aes(x = Switch_Method, y = mean, group = diagnostic_group, 
              fill = diagnostic_group)) +
          geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
@@ -266,20 +251,26 @@ cluster_size %>%
          plot.title = element_text(hjust = .5),
          axis.text.x = element_text(face = "bold", size = rel(1.2)))
 
+ggsave('plots/sz_clustersize.pdf', sz_clustersizeplot)  
 
-cluster_size_model_troyer = cluster_size %>% filter(Switch_Method == "troyer")
-cluster_size_model_troyer$diagnostic_group = as.factor(cluster_size_model_troyer$diagnostic_group)
-contrasts(cluster_size_model_troyer$diagnostic_group) = contr.treatment(3, base = 3)
+agg_cluster_size = sz_switch_metrics %>%
+  filter(Switch_Method == "simdrop") %>%
+  group_by(diagnostic_group) %>%
+  summarise(mean = mean(Cluster_Size_mean),
+            sd = sd (Cluster_Size_mean))
 
-cluster_size_model_troyer = lm(data = cluster_size_model_troyer, num_items ~ diagnostic_group)
+cluster_size_associative = sz_switch_metrics %>% filter(Switch_Method == "norms_associative")
+cluster_size_associative$diagnostic_group = as.factor(cluster_size_associative$diagnostic_group)
+contrasts(cluster_size_associative$diagnostic_group) = contr.treatment(3, base = 3)
 
-summary(cluster_size_model_troyer)
+cluster_size_model_associative = lm(data = cluster_size_associative, Cluster_Size_mean ~ diagnostic_group)
 
-cluster_size_model_simdrop = cluster_size %>% filter(Switch_Method == "simdrop")
+summary(cluster_size_model_associative)
+cluster_size_model_simdrop = sz_switch_metrics %>% filter(Switch_Method == "simdrop")
 cluster_size_model_simdrop$diagnostic_group = as.factor(cluster_size_model_simdrop$diagnostic_group)
 contrasts(cluster_size_model_simdrop$diagnostic_group) = contr.treatment(3, base = 3)
 
-cluster_size_model_simdrop = lm(data = cluster_size_model_simdrop, num_items ~ diagnostic_group)
+cluster_size_model_simdrop = lm(data = cluster_size_model_simdrop, Cluster_Size_mean ~ diagnostic_group)
 
 summary(cluster_size_model_simdrop)
 
@@ -297,8 +288,7 @@ betas = sz_modeldata %>% select(subject, diagnostic_group, Model,
 
 betas %>%
   filter(!is.na(value)) %>%
-  #filter(beta == "Phonological") %>%
-    group_by(diagnostic_group, Model, beta) %>%
+  group_by(diagnostic_group, Model, beta) %>%
   summarise(ci = list(mean_cl_boot(value) %>% 
                         rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
   arrange(beta)
@@ -306,13 +296,4 @@ betas %>%
 
 
 
-## model nLLs
-```{r}
-sum_nLL = sz_modeldata %>% group_by(diagnostic_group, Model) %>%
-  filter(Model %in% c("forage_static", "forage_dynamic_simdrop", "forage_dynamic_troyer")) %>%
-  summarise(sum_nLL = sum(Negative_Log_Likelihood_Optimized)) %>%
-  arrange(sum_nLL) %>%
-  slice_min(sum_nLL)
 
-sum_nLL
-```
