@@ -51,10 +51,10 @@ Fluency_Item %in% c("aardvark", "elephant", "flea", "ferret", "parrot", "hippopo
 clusterplot =psyrev_switch_sample %>%
   filter(method == "associative")%>%
   ggplot(aes(x = row, y = value, group= type, color = type)) +
-  geom_line()+
+  geom_line(aes(linetype = type))+
   facet_wrap(~method)+
   scale_color_stata()+
-  geom_point(size = 4)+
+  geom_point(size = 4, aes(shape = type))+
   ggthemes::theme_few()+
   labs(x = "retrieval order", y = "similarity value")+
   theme(axis.title = element_text(face = "bold", size = rel(1)),
@@ -84,12 +84,22 @@ psyrev_sum_nLL
 
 # sz data
 ```{r}
-sz_individual_metrics = read_csv("data/sz_data/sz_unk/individual_descriptive_stats.csv") %>% 
+sz_individual_metrics = rbind(read_csv("data/sz_data/sz_mean/individual_descriptive_stats.csv") %>%
+                        mutate(oov = "mean"),
+                      read_csv("data/sz_data/sz_exclude/individual_descriptive_stats.csv") %>%
+                        mutate(oov = "exclude"),
+                      read_csv("data/sz_data/sz_truncate/individual_descriptive_stats.csv") %>%
+                        mutate(oov = "truncate"))%>%
   rename(subject = Subject) %>%
   left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
 
-sz_modeldata = read_csv("data/sz_data/sz_unk/model_results.csv") %>% 
+sz_modeldata = rbind(read_csv("data/sz_data/sz_mean/model_results.csv") %>%
+                       mutate(oov = "mean"),
+                     read_csv("data/sz_data/sz_exclude/model_results.csv") %>%
+                       mutate(oov = "exclude"),
+                     read_csv("data/sz_data/sz_truncate/model_results.csv") %>%
+                       mutate(oov = "truncate"))%>% 
   rename(subject = Subject) %>%
   left_join( readxl::read_excel("data/sz_data/diagnostic_group_codes.xlsx"))%>%
   filter(!is.na(diagnostic_group))
@@ -102,43 +112,31 @@ sz_modeldata = read_csv("data/sz_data/sz_unk/model_results.csv") %>%
 ```{r}
 
 num_items = sz_individual_metrics %>% filter(!is.na(`#_of_Items`))%>%
-  select(diagnostic_group, subject, `#_of_Items`)
+  select(oov, diagnostic_group, subject, `#_of_Items`)
 
   
 agg_items = sz_individual_metrics %>% filter(!is.na(`#_of_Items`))%>%
-  group_by(diagnostic_group)%>%
+  group_by(oov, diagnostic_group)%>%
   summarise(ci = list(mean_cl_boot(`#_of_Items`) %>% 
                         rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest
   
-agg_items %>%
-  ggplot(aes(x = diagnostic_group, y = mean, group = diagnostic_group, 
-             fill = diagnostic_group)) +
-         geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
-            geom_errorbar(aes(ymin=lwr, ymax=upr), size = 0.5, width=.1, 
-                color = "black", position = position_dodge(0.70))+
-  geom_point(data = num_items, aes(x = diagnostic_group, y = `#_of_Items`, 
-                                    group = diagnostic_group, fill =diagnostic_group),
-             shape = 21, position = position_jitterdodge(jitter.width = 0.1),
-             alpha = 0.6)+
-  theme_few()+
-  scale_fill_calc()+
-  scale_color_calc()+
-  labs(y = "number of items", x = "", title = "forager: Number of Items")+
-  theme(aspect.ratio = 1)+
-   theme(axis.title = element_text(face = "bold", size = rel(1)),
-          legend.title = element_text(face = "bold", size = rel(1)),
-         plot.title = element_text(hjust = .5),
-         axis.text.x = element_text(face = "bold", size = rel(1.2)))
-
 ## model
 
 num_items$diagnostic_group = as.factor(num_items$diagnostic_group)
 contrasts(num_items$diagnostic_group) = contr.treatment(3, base = 3)
 
-items_model = lm(data = num_items, `#_of_Items` ~ diagnostic_group)
+num_items$oov = as.factor(num_items$oov)
+contrasts(num_items$oov) = contr.treatment(3, base = 3)
+
+items_model = lm(data = num_items, `#_of_Items` ~ diagnostic_group*oov)
 
 summary(items_model)
-contrasts(num_items$diagnostic_group)
+car::Anova(items_model)
+
+emmeans::emmeans(items_model, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
+
 ```
 
 
@@ -146,7 +144,7 @@ contrasts(num_items$diagnostic_group)
 ```{r}  
 
 lexical_individual = sz_individual_metrics %>% filter(!is.na(`Semantic_Similarity_mean`))%>%
-  select(diagnostic_group, subject, 
+  select(oov, diagnostic_group, subject, 
          Semantic_Similarity_mean, Phonological_Similarity_mean, Frequency_Value_mean) %>%
   rename(semantic = Semantic_Similarity_mean, 
          frequency = Frequency_Value_mean,
@@ -154,26 +152,39 @@ lexical_individual = sz_individual_metrics %>% filter(!is.na(`Semantic_Similarit
   pivot_longer(names_to = "type", 
                cols=c(semantic, phonological,frequency)) %>%
   mutate(type = as.factor(type),
-         diagnostic_group =as.factor(diagnostic_group))
+         diagnostic_group =as.factor(diagnostic_group),
+         oov = as.factor(oov))
 
 agg_lexical = lexical_individual %>%
-  group_by(diagnostic_group, type) %>%
-  summarize(mean = mean(value),
-            sd = sd(value))
+  group_by(oov, diagnostic_group, type) %>%
+  summarize(mean = round(mean(value),2),
+            sd = round(sd(value),2)) %>%
+  mutate(mean_sd = paste(mean, "(", sd, ")")) %>%
+  select(-c(mean,sd)) %>%
+  pivot_wider(names_from = type, values_from = mean_sd)
 
 contrasts(lexical_individual$diagnostic_group) = contr.treatment(3, base = 3)
+contrasts(lexical_individual$oov) = contr.treatment(3, base = 3)
 
 freq_model = lm(data = lexical_individual %>% filter(type == "frequency"), 
-           value ~ diagnostic_group)
-summary(freq_model)
+           value ~ diagnostic_group*oov)
+car::Anova(freq_model)
+
+emmeans::emmeans(freq_model, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
+
 
 sem_model = lm(data = lexical_individual %>% filter(type == "semantic"), 
-           value ~ diagnostic_group)
-summary(sem_model)
+           value ~ diagnostic_group*oov)
+car::Anova(sem_model)
 
 phon_model = lm(data = lexical_individual %>% filter(type == "phonological"), 
-           value ~ diagnostic_group)
-summary(phon_model)
+           value ~ diagnostic_group*oov)
+car::Anova(phon_model)
+emmeans::emmeans(phon_model, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
 ```
 
 ## number of switches
@@ -182,47 +193,33 @@ summary(phon_model)
 
 sz_switch_metrics = sz_individual_metrics %>% 
   filter(Switch_Method %in% c("simdrop", "norms_associative", "norms_categorical")) %>%
-  select(subject, Switch_Method, Number_of_Switches, Cluster_Size_mean, Cluster_Size_std, diagnostic_group)
+  select(oov, subject, Switch_Method, Number_of_Switches, Cluster_Size_mean, Cluster_Size_std, diagnostic_group)
 
 
 agg_switches = sz_switch_metrics %>%
   filter(Switch_Method == "simdrop") %>%
-  group_by(diagnostic_group) %>%
-  summarise(mean = mean(Number_of_Switches),
-            sd = sd (Number_of_Switches))
+  group_by(oov, diagnostic_group) %>%
+  summarise(mean = round(mean(Number_of_Switches),2),
+            sd = round(sd (Number_of_Switches),2))%>%
+  mutate(mean_sd = paste(mean, "(", sd, ")")) %>%
+  select(-c(mean,sd))
 
-
-sz_switchplot = sz_switch_metrics %>%
-    group_by(diagnostic_group, Switch_Method) %>%
-  summarise(ci = list(mean_cl_boot(Number_of_Switches) %>% 
-                        rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
-  mutate(Switch_Method = ifelse(Switch_Method == "norms_associative", "norms\nassociative",
-                                ifelse(Switch_Method == "norms_categorical", "norms\ncategorical", "similarity\ndrop")))%>%
-  ggplot(aes(x = Switch_Method, y = mean, group = diagnostic_group, 
-             fill = diagnostic_group)) +
-         geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
-            geom_errorbar(aes(ymin=lwr, ymax=upr), size = 0.5, width=.1, 
-                color = "black", position = position_dodge(0.70))+
-  theme_few()+
-  scale_fill_calc()+
-  scale_color_calc()+
-  labs(y = "mean number of switches across groups", x = "", title = "forager: Number of Switches")+
-  theme(aspect.ratio = 1)+
-   theme(axis.title = element_text(face = "bold", size = rel(1)),
-          legend.title = element_text(face = "bold", size = rel(1)),
-         plot.title = element_text(hjust = .5),
-         axis.text.x = element_text(face = "bold", size = rel(1.2)))
-
-ggsave('plots/sz_switches.pdf', sz_switchplot)  
 
 ## model
 
 sz_switch_metrics$diagnostic_group = as.factor(sz_switch_metrics$diagnostic_group)
 contrasts(sz_switch_metrics$diagnostic_group) = contr.treatment(3, base = 3)
 
+sz_switch_metrics$oov = as.factor(sz_switch_metrics$oov)
+contrasts(sz_switch_metrics$oov) = contr.treatment(3, base = 3)
+
 switch_model_simdrop = lm(data = sz_switch_metrics %>% filter(Switch_Method == "simdrop") , 
-                  Number_of_Switches ~ diagnostic_group)
-summary(switch_model_simdrop)
+                  Number_of_Switches ~ diagnostic_group*oov)
+car::Anova(switch_model_simdrop)
+
+emmeans::emmeans(switch_model_simdrop, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
 ```
 
 
@@ -230,68 +227,83 @@ summary(switch_model_simdrop)
 ## mean cluster size
 
 ```{r}
-sz_clustersizeplot = sz_switch_metrics %>%
-    group_by(diagnostic_group, Switch_Method) %>%
-  summarise(ci = list(mean_cl_boot(Cluster_Size_mean) %>% 
-                        rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
-  mutate(Switch_Method = ifelse(Switch_Method == "norms_associative", "norms\nassociative",
-                                ifelse(Switch_Method == "norms_categorical", "norms\ncategorical", "similarity\ndrop")))%>%
-  ggplot(aes(x = Switch_Method, y = mean, group = diagnostic_group, 
-             fill = diagnostic_group)) +
-         geom_bar(stat = "identity", position = "dodge", width = 0.7, color= "black")+
-            geom_errorbar(aes(ymin=lwr, ymax=upr), size = 0.5, width=.1, 
-                color = "black", position = position_dodge(0.70))+
-  theme_few()+
-  scale_fill_calc()+
-  scale_color_calc()+
-  labs(y = "mean cluster size", title = "forager: Mean Cluster Size", x= "")+
-  theme(aspect.ratio = 1)+
-   theme(axis.title = element_text(face = "bold", size = rel(1)),
-          legend.title = element_text(face = "bold", size = rel(1)),
-         plot.title = element_text(hjust = .5),
-         axis.text.x = element_text(face = "bold", size = rel(1.2)))
-
-ggsave('plots/sz_clustersize.pdf', sz_clustersizeplot)  
 
 agg_cluster_size = sz_switch_metrics %>%
   filter(Switch_Method == "simdrop") %>%
-  group_by(diagnostic_group) %>%
-  summarise(mean = mean(Cluster_Size_mean),
-            sd = sd (Cluster_Size_mean))
+  group_by(oov, diagnostic_group) %>%
+  summarise(mean = round(mean(Cluster_Size_mean),2),
+            sd = round(sd (Cluster_Size_mean),2)) %>%
+  mutate(mean_sd = paste(mean, "(", sd, ")")) %>%
+  select(-c(mean,sd))
 
-cluster_size_associative = sz_switch_metrics %>% filter(Switch_Method == "norms_associative")
-cluster_size_associative$diagnostic_group = as.factor(cluster_size_associative$diagnostic_group)
-contrasts(cluster_size_associative$diagnostic_group) = contr.treatment(3, base = 3)
 
-cluster_size_model_associative = lm(data = cluster_size_associative, Cluster_Size_mean ~ diagnostic_group)
+sz_switch_metrics$diagnostic_group = as.factor(sz_switch_metrics$diagnostic_group)
+contrasts(sz_switch_metrics$diagnostic_group) = contr.treatment(3, base = 3)
 
-summary(cluster_size_model_associative)
-cluster_size_model_simdrop = sz_switch_metrics %>% filter(Switch_Method == "simdrop")
-cluster_size_model_simdrop$diagnostic_group = as.factor(cluster_size_model_simdrop$diagnostic_group)
-contrasts(cluster_size_model_simdrop$diagnostic_group) = contr.treatment(3, base = 3)
+sz_switch_metrics$oov = as.factor(sz_switch_metrics$oov)
+contrasts(sz_switch_metrics$oov) = contr.treatment(3, base = 3)
 
-cluster_size_model_simdrop = lm(data = cluster_size_model_simdrop, Cluster_Size_mean ~ diagnostic_group)
+cluster_size_model_simdrop = lm(data = sz_switch_metrics %>%
+                                  filter(Switch_Method == "simdrop"), 
+                                Cluster_Size_mean ~ diagnostic_group*oov)
 
-summary(cluster_size_model_simdrop)
+car::Anova(cluster_size_model_simdrop)
+
+cluster_size_model_associative = lm(data = sz_switch_metrics %>%
+                                      filter(Switch_Method == "norms_associative"), 
+                                    Cluster_Size_mean ~ diagnostic_group*oov)
+
+car::Anova(cluster_size_model_associative)
+
+emmeans::emmeans(cluster_size_model_associative, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
+
+
 
 ```
 
 ## parameter values (betas)
 
 ```{r}
-betas = sz_modeldata %>% select(subject, diagnostic_group, Model, 
+betas = sz_modeldata %>% select(oov, subject, diagnostic_group, Model, 
                                Beta_Frequency, Beta_Semantic, Beta_Phonological) %>%
   filter(Model %in% c("forage_dynamic_simdrop")) %>%
     pivot_longer(names_to = "beta", 
                cols=c(Beta_Frequency, Beta_Semantic, Beta_Phonological)) %>%
-  separate(beta, into = c("beta1", "beta")) %>% select(-beta1)
+  separate(beta, into = c("beta1", "beta")) %>% select(-beta1) %>%
+  filter(!is.na(value))
 
-betas %>%
-  filter(!is.na(value)) %>%
-  group_by(diagnostic_group, Model, beta) %>%
+mean_betas = betas %>%
+  group_by(oov, diagnostic_group, Model, beta) %>%
   summarise(ci = list(mean_cl_boot(value) %>% 
                         rename(mean=y, lwr=ymin, upr=ymax))) %>% unnest %>%
-  arrange(beta)
+    mutate(mean = round(mean,2),
+           lwr = round(lwr, 2), 
+           upr = round(upr,2))%>%
+    mutate(mean_ci = paste(mean, "(", lwr, "-", upr, ")")) %>%
+    select(-c(mean, lwr, upr)) %>%
+  pivot_wider(names_from = diagnostic_group, values_from = mean_ci )
+
+## global cue salience model
+beta_frequency_model = lm(data = betas %>% filter(beta == "Frequency"), 
+                          value ~ diagnostic_group*oov)
+
+car::Anova(beta_frequency_model)
+
+emmeans::emmeans(beta_frequency_model, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
+
+## local cue salience model
+beta_semantic_model = lm(data = betas %>% filter(beta == "Semantic"), 
+                          value ~ diagnostic_group*oov)
+
+car::Anova(beta_semantic_model)
+
+emmeans::emmeans(beta_semantic_model, 
+                      pairwise ~ diagnostic_group,
+                      adjust="tukey")
 ```
 
 
